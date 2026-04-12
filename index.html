@@ -22,7 +22,7 @@
 </head>
 <body class="bg-slate-50 text-slate-900 font-sans antialiased p-4 md:p-8 relative">
 
-    <div id="toast" class="hidden fixed top-4 left-1/2 -translate-x-1/2 bg-emerald-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 transition-opacity font-medium"></div>
+    <div id="toast" role="status" aria-live="polite" class="hidden fixed top-4 left-1/2 -translate-x-1/2 bg-emerald-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 transition-opacity font-medium"></div>
 
     <main class="max-w-xl mx-auto space-y-6 mt-4">
         <!-- Diet Section -->
@@ -46,9 +46,9 @@
         <section class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
             <div class="flex justify-between items-center mb-4">
                 <div class="flex items-center gap-2">
-                    <button onclick="changeMonth(-1)" class="p-1.5 hover:bg-slate-100 rounded text-slate-600 transition-colors">&larr;</button>
+                    <button onclick="changeMonth(-1)" aria-label="Previous month" class="p-1.5 hover:bg-slate-100 rounded text-slate-600 transition-colors">&larr;</button>
                     <h2 class="text-lg font-semibold text-slate-800 w-32 text-center" id="calendarMonthLabel">Calendar</h2>
-                    <button onclick="changeMonth(1)" class="p-1.5 hover:bg-slate-100 rounded text-slate-600 transition-colors">&rarr;</button>
+                    <button onclick="changeMonth(1)" aria-label="Next month" class="p-1.5 hover:bg-slate-100 rounded text-slate-600 transition-colors">&rarr;</button>
                 </div>
                 <button onclick="resetCalendar()" class="text-xs text-slate-500 hover:text-slate-800 underline">Today</button>
             </div>
@@ -85,7 +85,7 @@
         <div class="bg-white p-6 rounded-xl w-full max-w-sm shadow-xl">
             <h3 class="text-lg font-bold mb-2">Log Diet Break</h3>
             <p class="text-sm text-slate-500 mb-4">What did you eat?</p>
-            <textarea id="dietDesc" class="w-full border border-slate-300 p-3 rounded-lg mb-4 focus:ring-2 focus:ring-negative focus:outline-none" rows="3" placeholder="e.g. pizza..."></textarea>
+            <textarea id="dietDesc" maxlength="500" class="w-full border border-slate-300 p-3 rounded-lg mb-4 focus:ring-2 focus:ring-negative focus:outline-none" rows="3" placeholder="e.g. pizza..."></textarea>
             <div class="flex justify-end gap-3">
                 <button onclick="closeDietModal()" class="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">Cancel</button>
                 <button onclick="saveDietBreak()" class="px-4 py-2 bg-negative hover:bg-negativeHover text-white rounded-lg transition-colors">Save</button>
@@ -134,26 +134,30 @@
             if (!ts) return Date.now();
             if (typeof ts.toMillis === 'function') return ts.toMillis();
             if (typeof ts.seconds === 'number') return ts.seconds * 1000;
-            return typeof ts === 'number' ? ts : Date.now();
+            return (typeof ts === 'number' || typeof ts === 'string') ? new Date(ts).getTime() : Date.now();
+        };
+
+        const escapeHtml = (str) => {
+            const div = document.createElement('div');
+            div.textContent = str ?? '';
+            return div.innerHTML;
         };
 
         function initUI() {
             const container = document.getElementById('workout-container');
-            container.innerHTML = '';
-            workouts.forEach(w => {
-                let inputsHtml = w.type === 'single' 
+            container.innerHTML = workouts.map(w => {
+                const inputsHtml = w.type === 'single'
                     ? `<input type="number" id="input-${w.id}" min="0" step="any" placeholder="${w.unit}" class="w-full sm:w-24 p-2 border border-slate-300 rounded-lg bg-slate-50 text-center focus:outline-none focus:ring-2 focus:ring-primary">`
                     : `<div class="flex gap-2 w-full sm:w-auto">
                         <input type="number" id="weight-${w.id}" min="0" step="any" placeholder="lbs" class="w-full sm:w-16 p-2 border border-slate-300 rounded-lg bg-slate-50 text-center focus:outline-none focus:ring-2 focus:ring-primary">
                         <input type="number" id="reps-${w.id}" min="0" step="1" placeholder="reps" class="w-full sm:w-16 p-2 border border-slate-300 rounded-lg bg-slate-50 text-center focus:outline-none focus:ring-2 focus:ring-primary">
                        </div>`;
-
-                container.innerHTML += `
+                return `
                     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4 border-b border-slate-50 pb-2">
                         <h3 class="font-medium text-slate-800 text-sm sm:text-base">${w.name}</h3>
                         <div class="flex items-center gap-2">${inputsHtml}</div>
                     </div>`;
-            });
+            }).join('');
             renderCalendar([]);
         }
 
@@ -195,27 +199,35 @@
             grid.innerHTML = html;
         }
 
+        let unsubscribers = [];
+
         function setupRealtimeLogs() {
+            unsubscribers.forEach(fn => fn());
+            unsubscribers = [];
+
             let dietLogs = [], workoutLogs = [], legacyLogs = [];
             const refresh = () => {
                 currentLogs = [...dietLogs, ...workoutLogs, ...legacyLogs].sort((a, b) => getMillis(b.timestamp) - getMillis(a.timestamp));
                 renderCalendar(currentLogs);
                 updateMonthlySummary(currentLogs);
-                
+
                 const list = document.getElementById('historyList');
-                list.innerHTML = currentLogs.length ? '' : '<li class="text-slate-400 italic">No history logged yet.</li>';
-                currentLogs.slice(0, 50).forEach(log => {
+                if (!currentLogs.length) {
+                    list.innerHTML = '<li class="text-slate-400 italic">No history logged yet.</li>';
+                    return;
+                }
+                list.innerHTML = currentLogs.slice(0, 50).map(log => {
                     const date = getLogDate(log.timestamp).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-                    let text = log.type === 'diet' 
-                        ? `<span class="text-negative font-medium">Diet Break:</span> ${log.description}` 
-                        : `<span class="text-primary font-medium">Workout:</span> ${(log.exercises || []).map(e => e.weight ? `${e.name} (${e.weight}lbs x ${e.reps})` : `${e.name} (${e.value}${e.unit})`).join(', ')}`;
-                    list.innerHTML += `<li class="p-3 bg-slate-50 rounded-lg border border-slate-100 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1"><div class="flex-1 text-xs sm:text-sm">${text}</div><div class="text-[10px] text-slate-400 whitespace-nowrap">${date}</div></li>`;
-                });
+                    const text = log.type === 'diet'
+                        ? `<span class="text-negative font-medium">Diet Break:</span> ${escapeHtml(log.description)}`
+                        : `<span class="text-primary font-medium">Workout:</span> ${(log.exercises || []).map(e => e.weight ? `${escapeHtml(e.name)} (${e.weight}lbs x ${e.reps})` : `${escapeHtml(e.name)} (${e.value}${e.unit})`).join(', ')}`;
+                    return `<li class="p-3 bg-slate-50 rounded-lg border border-slate-100 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1"><div class="flex-1 text-xs sm:text-sm">${text}</div><div class="text-[10px] text-slate-400 whitespace-nowrap">${date}</div></li>`;
+                }).join('');
             };
 
-            onSnapshot(collection(db, 'diet_breaks'), s => { dietLogs = s.docs.map(d => ({id: d.id, type: 'diet', ...d.data()})); refresh(); });
-            onSnapshot(collection(db, 'workouts'), s => { workoutLogs = s.docs.map(d => ({id: d.id, type: 'workout_session', ...d.data()})); refresh(); });
-            onSnapshot(collection(db, 'workout_logs'), s => { legacyLogs = s.docs.map(d => ({id: d.id, type: d.data().type === 'diet' ? 'diet' : 'workout_session', ...d.data()})); refresh(); });
+            unsubscribers.push(onSnapshot(collection(db, 'diet_breaks'), s => { dietLogs = s.docs.map(d => ({id: d.id, type: 'diet', ...d.data()})); refresh(); }));
+            unsubscribers.push(onSnapshot(collection(db, 'workouts'), s => { workoutLogs = s.docs.map(d => ({id: d.id, type: 'workout_session', ...d.data()})); refresh(); }));
+            unsubscribers.push(onSnapshot(collection(db, 'workout_logs'), s => { legacyLogs = s.docs.map(d => ({id: d.id, type: d.data().type ?? 'workout_session', ...d.data()})); refresh(); }));
         }
 
         window.renderCalendar = (logs) => {
@@ -238,52 +250,67 @@
                 }
             });
 
-            grid.innerHTML = '';
-            for (let i = 0; i < new Date(year, month, 1).getDay(); i++) grid.innerHTML += `<div></div>`;
+            const cells = [];
+            for (let i = 0; i < new Date(year, month, 1).getDay(); i++) cells.push('<div></div>');
             for (let i = 1; i <= daysInMonth; i++) {
                 const d = daysData[i];
                 const isToday = (i === now.getDate() && month === now.getMonth() && year === now.getFullYear()) ? 'ring-2 ring-primary ring-offset-1' : '';
-                grid.innerHTML += `<div class="relative flex items-center justify-center h-10 rounded-lg border ${d.workout ? 'bg-emerald-100 border-emerald-300 text-emerald-800' : 'bg-slate-100 border-slate-200 text-slate-400'} ${isToday} text-sm font-medium">${i}${d.dietBreak ? '<span class="absolute top-1 right-1 w-2 h-2 rounded-full bg-negative"></span>' : ''}</div>`;
+                cells.push(`<div class="relative flex items-center justify-center h-10 rounded-lg border ${d.workout ? 'bg-emerald-100 border-emerald-300 text-emerald-800' : 'bg-slate-100 border-slate-200 text-slate-400'} ${isToday} text-sm font-medium">${i}${d.dietBreak ? '<span class="absolute top-1 right-1 w-2 h-2 rounded-full bg-negative"></span>' : ''}</div>`);
             }
+            grid.innerHTML = cells.join('');
         };
 
+        let isSavingDiet = false;
         window.saveDietBreak = async () => {
             const desc = document.getElementById('dietDesc').value.trim();
-            if (!desc || !currentUser) return;
+            if (!desc || !currentUser || isSavingDiet) return;
+            isSavingDiet = true;
             try {
                 await addDoc(collection(db, 'diet_breaks'), { description: desc, userId: currentUser.uid, timestamp: serverTimestamp() });
                 closeDietModal();
                 showToast("Diet break recorded");
             } catch(e) { showToast("DB Error: " + e.message); }
+            finally { isSavingDiet = false; }
         };
 
+        let isSavingWorkout = false;
         window.saveWorkoutSession = async () => {
+            if (isSavingWorkout) return;
             const ex = [];
             workouts.forEach(w => {
                 if (w.type === 'single') {
                     const v = parseFloat(document.getElementById(`input-${w.id}`).value);
-                    if (v > 0) ex.push({ id: w.id, name: w.name, value: v, unit: w.unit });
+                    if (v > 0 && isFinite(v)) ex.push({ id: w.id, name: w.name, value: v, unit: w.unit });
                 } else {
-                    const wt = parseFloat(document.getElementById(`weight-${w.id}`).value), r = parseInt(document.getElementById(`reps-${w.id}`).value);
-                    if (wt > 0 && r > 0) ex.push({ id: w.id, name: w.name, weight: wt, reps: r });
+                    const wt = parseFloat(document.getElementById(`weight-${w.id}`).value);
+                    const r = parseInt(document.getElementById(`reps-${w.id}`).value);
+                    if (wt > 0 && isFinite(wt) && r > 0 && isFinite(r)) ex.push({ id: w.id, name: w.name, weight: wt, reps: r });
                 }
             });
             if (!ex.length) return showToast("Enter at least one exercise.");
+            isSavingWorkout = true;
             try {
                 await addDoc(collection(db, 'workouts'), { exercises: ex, userId: currentUser.uid, timestamp: serverTimestamp() });
-                workouts.forEach(w => { 
+                workouts.forEach(w => {
                     if (w.type === 'single') document.getElementById(`input-${w.id}`).value = '';
                     else { document.getElementById(`weight-${w.id}`).value = ''; document.getElementById(`reps-${w.id}`).value = ''; }
                 });
                 showToast("Workout saved!");
             } catch (e) { showToast("DB Error: " + e.message); }
+            finally { isSavingWorkout = false; }
         };
 
-        window.changeMonth = (d) => { currentCalendarDate.setMonth(currentCalendarDate.getMonth() + d); renderCalendar(currentLogs); updateMonthlySummary(currentLogs); };
+        window.changeMonth = (d) => {
+            currentCalendarDate = new Date(currentCalendarDate.getFullYear(), currentCalendarDate.getMonth() + d, 1);
+            renderCalendar(currentLogs);
+            updateMonthlySummary(currentLogs);
+        };
         window.resetCalendar = () => { currentCalendarDate = new Date(); renderCalendar(currentLogs); updateMonthlySummary(currentLogs); };
-        window.showToast = (m) => { const t = document.getElementById('toast'); t.innerText = m; t.classList.remove('hidden'); setTimeout(() => t.classList.add('hidden'), 3000); };
-        window.openDietModal = () => document.getElementById('dietModal').classList.remove('hidden');
+        window.showToast = (m) => { const t = document.getElementById('toast'); t.textContent = m; t.classList.remove('hidden'); setTimeout(() => t.classList.add('hidden'), 3000); };
+        window.openDietModal = () => { document.getElementById('dietModal').classList.remove('hidden'); document.getElementById('dietDesc').focus(); };
         window.closeDietModal = () => { document.getElementById('dietModal').classList.add('hidden'); document.getElementById('dietDesc').value = ''; };
+
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDietModal(); });
 
         onAuthStateChanged(auth, u => { currentUser = u; if (u) setupRealtimeLogs(); });
         initUI();
