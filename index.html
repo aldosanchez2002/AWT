@@ -25,23 +25,6 @@
     <div id="toast" role="status" aria-live="polite" class="hidden fixed top-4 left-1/2 -translate-x-1/2 bg-emerald-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 transition-opacity font-medium"></div>
 
     <main class="max-w-xl mx-auto space-y-6 mt-4">
-        <!-- Diet Section -->
-        <section class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-            <h2 class="text-lg font-semibold text-slate-800 mb-4">Diet Control</h2>
-            <button onclick="openDietModal()" class="w-full bg-negative hover:bg-negativeHover text-white font-medium py-3 rounded-lg transition-colors">
-                Add Diet Break
-            </button>
-        </section>
-
-        <!-- Workouts Section -->
-        <section class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-5">
-            <h2 class="text-lg font-semibold text-slate-800 border-b border-slate-100 pb-2">Workouts</h2>
-            <div id="workout-container" class="space-y-4"></div>
-            <button onclick="saveWorkoutSession()" class="w-full bg-primary hover:bg-primaryHover text-white font-medium py-3 rounded-lg transition-colors mt-4">
-                Save Daily Workout
-            </button>
-        </section>
-
         <!-- Sleep Tracking Section -->
         <section class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
             <h2 class="text-lg font-semibold text-slate-800 mb-4">Sleep Tracking</h2>
@@ -62,6 +45,23 @@
             </div>
         </section>
 
+        <!-- Diet Section -->
+        <section class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+            <h2 class="text-lg font-semibold text-slate-800 mb-4">Diet Control</h2>
+            <button onclick="openDietModal()" class="w-full bg-negative hover:bg-negativeHover text-white font-medium py-3 rounded-lg transition-colors">
+                Add Diet Break
+            </button>
+        </section>
+
+        <!-- Workouts Section -->
+        <section class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-5">
+            <h2 class="text-lg font-semibold text-slate-800 border-b border-slate-100 pb-2">Workouts</h2>
+            <div id="workout-container" class="space-y-4"></div>
+            <button onclick="saveWorkoutSession()" class="w-full bg-primary hover:bg-primaryHover text-white font-medium py-3 rounded-lg transition-colors mt-4">
+                Save Daily Workout
+            </button>
+        </section>
+
         <!-- Calendar Section -->
         <section class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
             <div class="flex justify-between items-center mb-4">
@@ -80,8 +80,8 @@
                 <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-slate-100 border border-slate-200"></span> No Workout</span>
                 <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-emerald-100 border border-emerald-300"></span> Workout</span>
                 <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-negative"></span> Diet Break</span>
-                <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-blue-500"></span> Sleep</span>
-                <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-purple-500"></span> Weight</span>
+                <span class="flex items-center gap-1"><span class="text-[8px] text-blue-600 font-semibold">7.5</span> Sleep hrs</span>
+                <span class="flex items-center gap-1"><span class="text-[8px] text-purple-600 font-semibold">175</span> Weight lbs</span>
             </div>
         </section>
 
@@ -286,16 +286,17 @@
 
             const daysData = {};
             const daysInMonth = new Date(year, month + 1, 0).getDate();
-            for(let i=1; i<=daysInMonth; i++) daysData[i] = { workout: false, dietBreak: false, sleep: false, weight: false };
+            for(let i=1; i<=daysInMonth; i++) daysData[i] = { workout: false, dietBreak: false, sleep: null, weight: null };
 
+            // logs are sorted descending; first match per day = most recent
             logs.forEach(log => {
                 const logDate = getLogDate(log.timestamp);
                 if (logDate.getFullYear() === year && logDate.getMonth() === month) {
                     const day = logDate.getDate();
                     if (log.type === 'workout_session') daysData[day].workout = true;
                     if (log.type === 'diet') daysData[day].dietBreak = true;
-                    if (log.type === 'sleep') daysData[day].sleep = true;
-                    if (log.type === 'weight') daysData[day].weight = true;
+                    if (log.type === 'sleep' && daysData[day].sleep === null) daysData[day].sleep = log.hours;
+                    if (log.type === 'weight' && daysData[day].weight === null) daysData[day].weight = log.weight;
                 }
             });
 
@@ -304,12 +305,12 @@
             for (let i = 1; i <= daysInMonth; i++) {
                 const d = daysData[i];
                 const isToday = (i === now.getDate() && month === now.getMonth() && year === now.getFullYear()) ? 'ring-2 ring-primary ring-offset-1' : '';
-                const dots = [
-                    d.dietBreak ? '<span class="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-negative"></span>' : '',
-                    d.sleep ? '<span class="absolute bottom-1 left-1 w-1.5 h-1.5 rounded-full bg-blue-500"></span>' : '',
-                    d.weight ? '<span class="absolute bottom-1 right-1 w-1.5 h-1.5 rounded-full bg-purple-500"></span>' : ''
+                const indicators = [
+                    d.dietBreak ? '<span class="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-negative"></span>' : '',
+                    d.sleep !== null ? `<span class="absolute bottom-0.5 left-0.5 text-[7px] leading-none text-blue-600 font-semibold">${d.sleep}</span>` : '',
+                    d.weight !== null ? `<span class="absolute bottom-0.5 right-0.5 text-[7px] leading-none text-purple-600 font-semibold">${d.weight}</span>` : ''
                 ].join('');
-                cells.push(`<div class="relative flex items-center justify-center h-10 rounded-lg border ${d.workout ? 'bg-emerald-100 border-emerald-300 text-emerald-800' : 'bg-slate-100 border-slate-200 text-slate-400'} ${isToday} text-sm font-medium">${i}${dots}</div>`);
+                cells.push(`<div class="relative flex items-center justify-center h-10 rounded-lg border ${d.workout ? 'bg-emerald-100 border-emerald-300 text-emerald-800' : 'bg-slate-100 border-slate-200 text-slate-400'} ${isToday} text-sm font-medium">${i}${indicators}</div>`);
             }
             grid.innerHTML = cells.join('');
         };
