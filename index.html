@@ -42,6 +42,26 @@
             </button>
         </section>
 
+        <!-- Sleep Tracking Section -->
+        <section class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+            <h2 class="text-lg font-semibold text-slate-800 mb-4">Sleep Tracking</h2>
+            <div class="flex items-center gap-3">
+                <label class="text-sm font-medium text-slate-700 whitespace-nowrap">Hours slept</label>
+                <input type="number" id="sleepInput" min="0" max="24" step="0.1" placeholder="e.g. 7.5" aria-label="Hours slept" class="flex-1 p-2 border border-slate-300 rounded-lg bg-slate-50 text-center focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <button onclick="saveSleepLog()" class="bg-blue-500 hover:bg-blue-600 text-white font-medium py-2 px-4 rounded-lg transition-colors whitespace-nowrap">Log Sleep</button>
+            </div>
+        </section>
+
+        <!-- Weight Tracking Section -->
+        <section class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+            <h2 class="text-lg font-semibold text-slate-800 mb-4">Daily Weigh-In</h2>
+            <div class="flex items-center gap-3">
+                <label class="text-sm font-medium text-slate-700 whitespace-nowrap">Weight (lbs)</label>
+                <input type="number" id="weightInput" min="0" step="0.1" placeholder="e.g. 175.5" aria-label="Weight in lbs" class="flex-1 p-2 border border-slate-300 rounded-lg bg-slate-50 text-center focus:outline-none focus:ring-2 focus:ring-purple-500">
+                <button onclick="saveWeightLog()" class="bg-purple-500 hover:bg-purple-600 text-white font-medium py-2 px-4 rounded-lg transition-colors whitespace-nowrap">Log Weight</button>
+            </div>
+        </section>
+
         <!-- Calendar Section -->
         <section class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
             <div class="flex justify-between items-center mb-4">
@@ -60,6 +80,8 @@
                 <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-slate-100 border border-slate-200"></span> No Workout</span>
                 <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-emerald-100 border border-emerald-300"></span> Workout</span>
                 <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-negative"></span> Diet Break</span>
+                <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-blue-500"></span> Sleep</span>
+                <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-purple-500"></span> Weight</span>
             </div>
         </section>
 
@@ -166,10 +188,15 @@
             const month = currentCalendarDate.getMonth();
             const grid = document.getElementById('monthlyStatsGrid');
             const label = document.getElementById('statsMonthLabel');
-            
+
             label.innerText = new Intl.DateTimeFormat('en-US', { month: 'short', year: 'numeric' }).format(currentCalendarDate);
 
-            let monthlyTotals = { diet: 0, wk: { pushups: 0, running: 0, bicepCurls: 0, benchPress: 0, squats: 0 } };
+            let monthlyTotals = {
+                diet: 0,
+                wk: { pushups: 0, running: 0, bicepCurls: 0, benchPress: 0, squats: 0 },
+                sleepTotal: 0, sleepCount: 0,
+                weightTotal: 0, weightCount: 0
+            };
 
             logs.forEach(log => {
                 const date = getLogDate(log.timestamp);
@@ -181,6 +208,12 @@
                                 monthlyTotals.wk[ex.id] += (ex.weight ? ex.reps : ex.value);
                             }
                         });
+                    } else if (log.type === 'sleep') {
+                        monthlyTotals.sleepTotal += log.hours;
+                        monthlyTotals.sleepCount++;
+                    } else if (log.type === 'weight') {
+                        monthlyTotals.weightTotal += log.weight;
+                        monthlyTotals.weightCount++;
                     }
                 }
             });
@@ -192,10 +225,15 @@
                 </div>
             `;
 
+            const avgSleep = monthlyTotals.sleepCount ? (monthlyTotals.sleepTotal / monthlyTotals.sleepCount).toFixed(1) : '—';
+            const avgWeight = monthlyTotals.weightCount ? (monthlyTotals.weightTotal / monthlyTotals.weightCount).toFixed(1) : '—';
+
             let html = renderStat('Diet Breaks', monthlyTotals.diet, '');
             workouts.forEach(w => {
                 html += renderStat(w.name, monthlyTotals.wk[w.id].toFixed(w.id === 'running' ? 1 : 0), w.type === 'single' ? w.unit : 'reps');
             });
+            html += renderStat('Avg Sleep', avgSleep, monthlyTotals.sleepCount ? 'hrs' : '');
+            html += renderStat('Avg Weight', avgWeight, monthlyTotals.weightCount ? 'lbs' : '');
             grid.innerHTML = html;
         }
 
@@ -205,9 +243,9 @@
             unsubscribers.forEach(fn => fn());
             unsubscribers = [];
 
-            let dietLogs = [], workoutLogs = [], legacyLogs = [];
+            let dietLogs = [], workoutLogs = [], legacyLogs = [], sleepLogs = [], weightLogs = [];
             const refresh = () => {
-                currentLogs = [...dietLogs, ...workoutLogs, ...legacyLogs].sort((a, b) => getMillis(b.timestamp) - getMillis(a.timestamp));
+                currentLogs = [...dietLogs, ...workoutLogs, ...legacyLogs, ...sleepLogs, ...weightLogs].sort((a, b) => getMillis(b.timestamp) - getMillis(a.timestamp));
                 renderCalendar(currentLogs);
                 updateMonthlySummary(currentLogs);
 
@@ -218,9 +256,16 @@
                 }
                 list.innerHTML = currentLogs.slice(0, 50).map(log => {
                     const date = getLogDate(log.timestamp).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-                    const text = log.type === 'diet'
-                        ? `<span class="text-negative font-medium">Diet Break:</span> ${escapeHtml(log.description)}`
-                        : `<span class="text-primary font-medium">Workout:</span> ${(log.exercises || []).map(e => e.weight ? `${escapeHtml(e.name)} (${e.weight}lbs x ${e.reps})` : `${escapeHtml(e.name)} (${e.value}${e.unit})`).join(', ')}`;
+                    let text;
+                    if (log.type === 'diet') {
+                        text = `<span class="text-negative font-medium">Diet Break:</span> ${escapeHtml(log.description)}`;
+                    } else if (log.type === 'sleep') {
+                        text = `<span class="text-blue-500 font-medium">Sleep:</span> ${log.hours} hrs`;
+                    } else if (log.type === 'weight') {
+                        text = `<span class="text-purple-500 font-medium">Weight:</span> ${log.weight} lbs`;
+                    } else {
+                        text = `<span class="text-primary font-medium">Workout:</span> ${(log.exercises || []).map(e => e.weight ? `${escapeHtml(e.name)} (${e.weight}lbs x ${e.reps})` : `${escapeHtml(e.name)} (${e.value}${e.unit})`).join(', ')}`;
+                    }
                     return `<li class="p-3 bg-slate-50 rounded-lg border border-slate-100 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1"><div class="flex-1 text-xs sm:text-sm">${text}</div><div class="text-[10px] text-slate-400 whitespace-nowrap">${date}</div></li>`;
                 }).join('');
             };
@@ -228,6 +273,8 @@
             unsubscribers.push(onSnapshot(collection(db, 'diet_breaks'), s => { dietLogs = s.docs.map(d => ({id: d.id, type: 'diet', ...d.data()})); refresh(); }));
             unsubscribers.push(onSnapshot(collection(db, 'workouts'), s => { workoutLogs = s.docs.map(d => ({id: d.id, type: 'workout_session', ...d.data()})); refresh(); }));
             unsubscribers.push(onSnapshot(collection(db, 'workout_logs'), s => { legacyLogs = s.docs.map(d => ({id: d.id, type: d.data().type ?? 'workout_session', ...d.data()})); refresh(); }));
+            unsubscribers.push(onSnapshot(collection(db, 'sleep_logs'), s => { sleepLogs = s.docs.map(d => ({id: d.id, type: 'sleep', ...d.data()})); refresh(); }));
+            unsubscribers.push(onSnapshot(collection(db, 'weight_logs'), s => { weightLogs = s.docs.map(d => ({id: d.id, type: 'weight', ...d.data()})); refresh(); }));
         }
 
         window.renderCalendar = (logs) => {
@@ -239,7 +286,7 @@
 
             const daysData = {};
             const daysInMonth = new Date(year, month + 1, 0).getDate();
-            for(let i=1; i<=daysInMonth; i++) daysData[i] = { workout: false, dietBreak: false };
+            for(let i=1; i<=daysInMonth; i++) daysData[i] = { workout: false, dietBreak: false, sleep: false, weight: false };
 
             logs.forEach(log => {
                 const logDate = getLogDate(log.timestamp);
@@ -247,6 +294,8 @@
                     const day = logDate.getDate();
                     if (log.type === 'workout_session') daysData[day].workout = true;
                     if (log.type === 'diet') daysData[day].dietBreak = true;
+                    if (log.type === 'sleep') daysData[day].sleep = true;
+                    if (log.type === 'weight') daysData[day].weight = true;
                 }
             });
 
@@ -255,7 +304,12 @@
             for (let i = 1; i <= daysInMonth; i++) {
                 const d = daysData[i];
                 const isToday = (i === now.getDate() && month === now.getMonth() && year === now.getFullYear()) ? 'ring-2 ring-primary ring-offset-1' : '';
-                cells.push(`<div class="relative flex items-center justify-center h-10 rounded-lg border ${d.workout ? 'bg-emerald-100 border-emerald-300 text-emerald-800' : 'bg-slate-100 border-slate-200 text-slate-400'} ${isToday} text-sm font-medium">${i}${d.dietBreak ? '<span class="absolute top-1 right-1 w-2 h-2 rounded-full bg-negative"></span>' : ''}</div>`);
+                const dots = [
+                    d.dietBreak ? '<span class="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-negative"></span>' : '',
+                    d.sleep ? '<span class="absolute bottom-1 left-1 w-1.5 h-1.5 rounded-full bg-blue-500"></span>' : '',
+                    d.weight ? '<span class="absolute bottom-1 right-1 w-1.5 h-1.5 rounded-full bg-purple-500"></span>' : ''
+                ].join('');
+                cells.push(`<div class="relative flex items-center justify-center h-10 rounded-lg border ${d.workout ? 'bg-emerald-100 border-emerald-300 text-emerald-800' : 'bg-slate-100 border-slate-200 text-slate-400'} ${isToday} text-sm font-medium">${i}${dots}</div>`);
             }
             grid.innerHTML = cells.join('');
         };
@@ -298,6 +352,32 @@
                 showToast("Workout saved!");
             } catch (e) { showToast("DB Error: " + e.message); }
             finally { isSavingWorkout = false; }
+        };
+
+        let isSavingSleep = false;
+        window.saveSleepLog = async () => {
+            const hours = parseFloat(document.getElementById('sleepInput').value);
+            if (!isFinite(hours) || hours <= 0 || !currentUser || isSavingSleep) return showToast("Enter valid sleep hours.");
+            isSavingSleep = true;
+            try {
+                await addDoc(collection(db, 'sleep_logs'), { hours, userId: currentUser.uid, timestamp: serverTimestamp() });
+                document.getElementById('sleepInput').value = '';
+                showToast("Sleep logged!");
+            } catch(e) { showToast("DB Error: " + e.message); }
+            finally { isSavingSleep = false; }
+        };
+
+        let isSavingWeight = false;
+        window.saveWeightLog = async () => {
+            const weight = parseFloat(document.getElementById('weightInput').value);
+            if (!isFinite(weight) || weight <= 0 || !currentUser || isSavingWeight) return showToast("Enter valid weight.");
+            isSavingWeight = true;
+            try {
+                await addDoc(collection(db, 'weight_logs'), { weight, userId: currentUser.uid, timestamp: serverTimestamp() });
+                document.getElementById('weightInput').value = '';
+                showToast("Weight logged!");
+            } catch(e) { showToast("DB Error: " + e.message); }
+            finally { isSavingWeight = false; }
         };
 
         window.changeMonth = (d) => {
